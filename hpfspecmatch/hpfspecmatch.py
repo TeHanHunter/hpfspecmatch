@@ -15,9 +15,9 @@ from hpfspec import rotbroad_help
 from hpfspec import utils
 import matplotlib.pyplot as plt
 import astropy.modeling
-from priors import PriorSet, UP, NP, JP
-from likelihood import ll_normal_es_py, ll_normal_ev_py
-import config
+from .priors import PriorSet, UP, NP, JP
+from .likelihood import ll_normal_es_py, ll_normal_ev_py
+import hpfspecmatch.config as config
 from matplotlib.gridspec import GridSpec
 from matplotlib import rcParams
 rcParams["savefig.dpi"] = 100
@@ -813,8 +813,9 @@ def run_specmatch_for_orders(targetfile, targetname, outputdirectory='specmatch_
         targetname will be queried via simbad or tic which saves a configuration file to target config directory
     
     """
+    utils.make_dir(outputdirectory)
     # Target data
-    Htarget = hpfspec.HPFSpectrum(targetfile,targetname = targetname)
+    Htarget = hpfspec.HPFSpectrum(targetfile,targetname = targetname, plot_ccf=True, outputdirectory=outputdirectory)
 
     print('Reading Library DataBase from: {}'.format(path_df_lib))
     df_lib = pd.read_csv(path_df_lib)
