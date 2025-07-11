@@ -36,7 +36,7 @@ def process_fits_spectra(
         print(f"Found {len(fits_files)} FITS files.")
     print('Reading Library DataBase from: {}'.format(path_df_lib))
     df_lib = pd.read_csv(path_df_lib)
-    for filepath in fits_files[:2]:
+    for filepath in fits_files:
         filename = os.path.basename(filepath)
         try:
             with fits.open(filepath) as hdul:
@@ -168,4 +168,4 @@ if __name__ == '__main__':
         verbose=True
     )
 
-    gather_pickle_results(output_folder)
+    # gather_pickle_results(output_folder)
