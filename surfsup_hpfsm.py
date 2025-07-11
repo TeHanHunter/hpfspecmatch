@@ -5,7 +5,11 @@ from glob import glob
 from astropy.io import fits
 import pickle
 import csv
+from memory_profiler import profile
+import gc
+import pandas as pd
 
+@profile
 def process_fits_spectra(
     input_folder,
     output_folder,
@@ -30,8 +34,9 @@ def process_fits_spectra(
 
     if verbose:
         print(f"Found {len(fits_files)} FITS files.")
-
-    for filepath in fits_files:
+    print('Reading Library DataBase from: {}'.format(path_df_lib))
+    df_lib = pd.read_csv(path_df_lib)
+    for filepath in fits_files[:2]:
         filename = os.path.basename(filepath)
         try:
             with fits.open(filepath) as hdul:
@@ -48,12 +53,14 @@ def process_fits_spectra(
                     output_folder,
                     os.path.basename(filepath).split(".")[0]
                 ),
-                path_df_lib=path_df_lib,
+                df_lib=df_lib,
                 orders=orders,
                 maxvsini=maxvsini,
                 calibrate_feh=calibrate_feh,
                 scaleres=scaleres
             )
+            del hdul
+            gc.collect()
         except Exception as e:
             if verbose:
                 print(f"Error processing {filename}: {e}")

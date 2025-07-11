@@ -783,7 +783,7 @@ def summarize_values_from_orders(files_pkl,targetname):
     return df, df_med
 
 def run_specmatch_for_orders(targetfile, targetname, outputdirectory='specmatch_results', HLS=None, 
-                             path_df_lib=config.PATH_LIBRARY_DB, orders = ['4','5','6','14','15','16','17'],
+                             df_lib=None, orders = ['4','5','6','14','15','16','17'],
                              maxvsini=30.,calibrate_feh=True,scaleres=1.):
     """
     run hpfspecmatch for a given target file and orders
@@ -817,8 +817,8 @@ def run_specmatch_for_orders(targetfile, targetname, outputdirectory='specmatch_
     # Target data
     Htarget = hpfspec.HPFSpectrum(targetfile,targetname = targetname, plot_ccf=True, outputdirectory=outputdirectory)
 
-    print('Reading Library DataBase from: {}'.format(path_df_lib))
-    df_lib = pd.read_csv(path_df_lib)
+    # print('Reading Library DataBase from: {}'.format(path_df_lib))
+    # df_lib = pd.read_csv(path_df_lib)
     
     # Reference data
     if HLS is None:
