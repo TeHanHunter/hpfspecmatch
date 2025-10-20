@@ -77,6 +77,23 @@ orders=['4', '5', '6', '14', '15', '16', '17']
 hpfspecmatch.run_specmatch_for_orders(filename, targetname, outputdir, HLS=HLS, orders=orders)
 ```
 
+If you already know the absolute radial velocity or projected rotation for your target, you can provide them directly via the optional `absrv` and `vsini` arguments. When `refine_absrv=True` (the default), the routine will refine the supplied RV using the composite-spectrum wavelength offset fitter:
+
+```python
+# Example with custom RV/rotation inputs
+hpfspecmatch.run_specmatch_for_orders(
+    filename,
+    targetname,
+    outputdir,
+    HLS=HLS,
+    orders=orders,
+    absrv=34.2,      # km/s
+    vsini=2.5,       # km/s
+    refine_absrv=True,
+    max_refinement_iterations=3,
+)
+```
+
 
 ## Summarizing orders for a given HPFSpecMatch Run
 

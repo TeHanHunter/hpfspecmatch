@@ -28,7 +28,7 @@ rcParams["axes.formatter.useoffset"] = False
 rcParams['xtick.direction']='in'
 rcParams['ytick.direction']='in'
 
-def get_data_ready(H1,Hrefs,w,v,polyvals=None,vsinis=None,plot=False):
+def get_data_ready(H1,Hrefs,w,v,polyvals=None,vsinis=None,plot=False,rv_orders=None,absrv=None):
     """
     Get data ready for MCMC
     
@@ -40,6 +40,8 @@ def get_data_ready(H1,Hrefs,w,v,polyvals=None,vsinis=None,plot=False):
         polyvals - polynomial coefficients (array)
         vsinis - vsini values km/s (array)
         plot - (boolean)
+        rv_orders - spectral orders used when estimating absolute RV (list)
+        absrv - absolute RV in km/s to apply directly (float; optional)
 
     OUTPUT:
         f1 - spectrum
@@ -52,8 +54,15 @@ def get_data_ready(H1,Hrefs,w,v,polyvals=None,vsinis=None,plot=False):
         files = sorted(glob.glob('20200209_ad_leos/AD_Leo/*/*.pkl'))
         summarize_values_from_orders(files,'AD_Leo')
     """
+    if rv_orders is None:
+        rv_orders = [5]
+
     H1.deblaze()
-    _, rabs = H1.rvabs_for_orders(v,orders=[5],plot=plot)
+    if absrv is not None:
+        rabs = np.array([absrv])
+        print("Using supplied absolute RV for target: {:0.3f} km/s".format(absrv))
+    else:
+        _, rabs = H1.rvabs_for_orders(v,orders=rv_orders,plot=plot)
     H1.redshift(rv=np.median(rabs))
     f1, e1 = H1.resample_order(w)
     print("Target={}, rv={:0.3f}km/s, rvmed={:0.3f}km/s".format(H1.target.name,H1.rv,np.median(rabs)))
@@ -62,7 +71,7 @@ def get_data_ready(H1,Hrefs,w,v,polyvals=None,vsinis=None,plot=False):
     eerefs = []
     for i, H in enumerate(Hrefs.splist):
         H.deblaze()
-        _, rabs = H.rvabs_for_orders(v,orders=[5],plot=plot)
+        _, rabs = H.rvabs_for_orders(v,orders=rv_orders,plot=plot)
         H.redshift(rv=np.median(rabs))
         if polyvals is None and vsinis is None:
             _f, _e = H.resample_order(w)
@@ -279,13 +288,22 @@ def sample(df_chain,N=500):
 
 
 class Chi2FunctionVsiniPolynomial(object):
-    def __init__(self,w,f1,e1,f2,e2,maxvsini):
+    def __init__(self,w,f1,e1,f2,e2,maxvsini,vsini_prior=None):
         self.w = w
         self.data_target = {'f': f1,
                             'e': e1}
         self.data_ref    = {'f': f2,
                             'e': e2}
-        self.priors = [UP( 0.     , maxvsini    , 'vsini', '$v \sin i$',priortype="model"),
+        if vsini_prior is not None:
+            vsini_std = 0.5
+            vmin = max(0., vsini_prior - vsini_std)
+            vmax = vsini_prior + vsini_std
+            print("Setting narrow vsini prior: {:0.3f} to {:0.3f} km/s (center {:0.3f})".format(vmin, vmax, vsini_prior))
+            vsini_prior_obj = UP( vmin, vmax, 'vsini', '$v \sin i$',priortype="model")
+        else:
+            print("Setting wide vsini prior: 0.000 to {:0.3f} km/s".format(maxvsini))
+            vsini_prior_obj = UP( 0.     , maxvsini    , 'vsini', '$v \sin i$',priortype="model")
+        self.priors = [vsini_prior_obj,
                        UP( -1e10  , 1e10        , 'c0'   , 'c_0'       ,priortype="model"),
                        UP( -1e10  , 1e10        , 'c1'   , 'c_1'       ,priortype="model"),
                        UP( -1e10  , 1e10        , 'c2'   , 'c_2'       ,priortype="model"),
@@ -351,8 +369,8 @@ class FitTargetRefStarVsiniPolynomial(object):
         
         # ####################################################
         # CHANGING 20190629
-        centers = [1.]+list(centers_coeffs)
-        #centers = [0.5]+list(centers_coeffs)
+        vsini_center = self.chi2f.ps.centers[0]
+        centers = [vsini_center]+list(centers_coeffs)
         # ####################################################
         
         #print('With CHI',self.chi2f(centers))
@@ -360,13 +378,12 @@ class FitTargetRefStarVsiniPolynomial(object):
         #random = self.lpf.ps.random
         #centers = np.array(self.lpf.ps.centers)
         
-        #self.res = scipy.optimize.minimize(self.chi2f,centers,method='Nelder-Mead',tol=1e-1,
-        #                           options={'maxiter': 1000, 'maxfev': 2000, 'disp': True})
-        self.res = scipy.optimize.minimize(self.chi2f,centers,method='Powell',tol=1e-1,
-                                   options={'maxiter': 1000, 'maxfev': 2000, 'disp': True})
-        #self.res = scipy.optimize.minimize(self.chi2f,centers,method='Nelder-Mead',tol=1e-7,
-        #                           options={'maxiter': 10000, 'maxfev': 5000, 'disp': True})
-        
+        print("Optimization bounds for vsini:",self.chi2f.ps.bounds[0])
+        print("Starting vsini value:",centers[0])
+        self.res = scipy.optimize.minimize(self.chi2f,centers,method='L-BFGS-B',
+                                           bounds=self.chi2f.ps.bounds,tol=1e-1,
+                                           options={'maxiter': 1000, 'disp': True})
+        print("Final vsini value:",self.res.x[0])
         self.min_pv = self.res.x
         
         
@@ -396,7 +413,7 @@ class FitTargetRefStarVsiniPolynomial(object):
             print("Finished MCMC")
 
     
-def chi2spectraPolyVsini(ww,H1,H2,rv1=None,rv2=None,plot=False,verbose=False,maxvsini=30.):
+def chi2spectraPolyVsini(ww,H1,H2,rv1=None,rv2=None,plot=False,verbose=False,maxvsini=30.,absrv=None,vsini=None):
     """
     INPUT:
         ww - wavelength grid to interpolate on (array)
@@ -406,11 +423,13 @@ def chi2spectraPolyVsini(ww,H1,H2,rv1=None,rv2=None,plot=False,verbose=False,max
         rv2 - radial velocity H2 km/s (float)
         plot - (boolean)
         verbose - print additional info (boolean)
+        absrv - placeholder for API parity (unused)
+        vsini - optional vsini prior (float)
 
     OUTPUT:
         chi2 - chi2 values for the comparison
         vsini - 
-        coeffs - 
+        coeffs - polynomial coefficients
         
     EXAMPLE:
         H1 = HPFSpectrum(df[df.name=='G_9-40'].filename.values[0])
@@ -425,7 +444,7 @@ def chi2spectraPolyVsini(ww,H1,H2,rv1=None,rv2=None,plot=False,verbose=False,max
     ff1, ee1 = H1.resample_order(ww)
     ff2, ee2 = H2.resample_order(ww)
     
-    C = Chi2FunctionVsiniPolynomial(ww,ff1,ee1,ff2, ee2, maxvsini)
+    C = Chi2FunctionVsiniPolynomial(ww,ff1,ee1,ff2, ee2, maxvsini,vsini_prior=vsini)
     FTRSVP = FitTargetRefStarVsiniPolynomial(C)
     FTRSVP.minimize_AMOEBA()
     vsini = FTRSVP.min_pv[0]
@@ -438,7 +457,7 @@ def chi2spectraPolyVsini(ww,H1,H2,rv1=None,rv2=None,plot=False,verbose=False,max
     return chi2, vsini, coeffs
 
 
-def chi2spectraPolyLoop(ww,H1,Hrefs,plot_all=False,plot_chi=True,verbose=True,maxvsini=30.):
+def chi2spectraPolyLoop(ww,H1,Hrefs,plot_all=False,plot_chi=True,verbose=True,maxvsini=30.,absrv=None,vsini=None):
     """
     Calculate chi square - target and list of reference spectra
     
@@ -449,6 +468,8 @@ def chi2spectraPolyLoop(ww,H1,Hrefs,plot_all=False,plot_chi=True,verbose=True,ma
         plot_all - creates many additional plots (boolean)
         plot_chi = plot chi2 H1 vs other stars (boolean)
         verbose - print additional info (boolean)
+        absrv - placeholder for API parity (unused)
+        vsini - optional vsini prior for chi2 fit (float)
     
     OUTPUT:
         df - dataframe of all reference stars sorted by chi2 (chi2, poly_params, and vsini values)
@@ -466,7 +487,7 @@ def chi2spectraPolyLoop(ww,H1,Hrefs,plot_all=False,plot_chi=True,verbose=True,ma
             print('First step: Matching target star to all library stars')
             print("##################")
 
-        chi, vsini, p  = chi2spectraPolyVsini(ww,H1,H2,plot=plot_all,maxvsini=maxvsini)
+        chi, vsini, p  = chi2spectraPolyVsini(ww,H1,H2,plot=plot_all,maxvsini=maxvsini,absrv=absrv,vsini=vsini)
         if verbose: 
             print('{:3d}/{:2d}, Target = {:18s} Library Star = {:18s} chi2 = {:6.3f}'.format(i+1,len(Hrefs),H1.object,H2.object, chi))
         chis.append(chi)
@@ -502,7 +523,7 @@ def weighted_value(values,weights):
     return np.dot(values,weights)
 
 def run_specmatch(Htarget,Hrefs,ww,v,df_library,df_target=None,plot=True,savefolder='out/',
-                  maxvsini=30.,calibrate_feh=True,scaleres=1.):
+                  maxvsini=30.,calibrate_feh=True,scaleres=1.,rv_orders=None,absrv=None,vsini=None):
     """
     Second chi2 loop, creates composite spectrum 
     
@@ -516,6 +537,9 @@ def run_specmatch(Htarget,Hrefs,ww,v,df_library,df_target=None,plot=True,savefol
         plot - save SpecMatch plots (boolean)
         savefolder - output directory name (String)
         scaleres - amount to scale residuals from composite spectrum (default 1)
+        rv_orders - spectral orders to use when estimating absolute RV (list)
+        absrv - absolute RV to adopt for the target (float; optional)
+        vsini - vsini prior to enforce (float; optional)
     
     OUTPUT:
         stellar parameters teff, feh, logg, vsini, and their errors
@@ -537,7 +561,7 @@ def run_specmatch(Htarget,Hrefs,ww,v,df_library,df_target=None,plot=True,savefol
     ##############################
     # STEP 1: Chi2 Loop
     df_chi, df_chi_best, Hbest = chi2spectraPolyLoop(ww,Htarget,Hrefs,plot_all=False,verbose=True,
-                                                     maxvsini=maxvsini)
+                                                     maxvsini=maxvsini,absrv=absrv,vsini=vsini)
     ##############################
     # Combine best data
     df_chi_best_total = pd.merge(df_chi_best,df_library,on='OBJECT_ID')
@@ -580,7 +604,7 @@ def run_specmatch(Htarget,Hrefs,ww,v,df_library,df_target=None,plot=True,savefol
     # STEP 2 LINEAR COMBINATION
     ##############################
     f1, e1, ffrefs, eerefs  = get_data_ready(Htarget,Hbest,ww,v,polyvals=df_chi_best.poly_params.values,
-                                             vsinis=df_chi_best.vsini.values)
+                                             vsinis=df_chi_best.vsini.values,rv_orders=rv_orders,absrv=absrv)
     L = LPFunctionLinComb(ww,f1,e1,ffrefs,eerefs)
     LCS = FitLinCombSpec(L,df_chi_best_total.Teff.values,
                          df_chi_best_total['[Fe/H]'].values,
@@ -782,9 +806,62 @@ def summarize_values_from_orders(files_pkl,targetname):
     print('Saved to {}'.format(savefolder+os.sep+target+'_med.csv'))
     return df, df_med
 
+def fit_wavelength_offset_to_rv_offset(wavelength, target_flux, composite_flux, error_flux, absrv_current):
+    """
+    Fit for a wavelength offset between target and composite spectrum,
+    then convert to absolute RV offset.
+    """
+    def chi2_wavelength_offset(wl_offset):
+        shifted_wl = wavelength + wl_offset
+        shifted_composite = np.interp(wavelength, shifted_wl, composite_flux)
+        chi2 = np.sum(((target_flux - shifted_composite) / error_flux) ** 2)
+        return chi2
+
+    bounds = (-0.1, 0.1)
+    try:
+        result = scipy.optimize.minimize_scalar(chi2_wavelength_offset, bounds=bounds, method='bounded')
+        wavelength_offset = result.x
+        chi2_min = result.fun
+        c = 299792.458
+        mean_wavelength = np.mean(wavelength)
+        rv_offset = c * wavelength_offset / mean_wavelength
+        improved_absrv = absrv_current + rv_offset
+        print("Wavelength offset: {:0.6f} Angstroms".format(wavelength_offset))
+        print("RV offset: {:0.3f} km/s".format(rv_offset))
+        print("Improved absrv: {:0.3f} km/s (change {:0.3f} km/s)".format(improved_absrv, rv_offset))
+        return improved_absrv, wavelength_offset, chi2_min
+    except Exception as exc:
+        print("Error refining absrv via wavelength offset: {}".format(exc))
+        return absrv_current, 0.0, np.inf
+
+
+def refit_absrv_with_composite(Htarget, LCS, ww, v, order, absrv_current, max_iterations=3, tolerance=0.1):
+    """
+    Refit absolute radial velocity using wavelength offset fitting between target and composite spectrum.
+    """
+    print("Starting wavelength offset-based absrv refinement for order {} from {:0.3f} km/s".format(order, absrv_current))
+
+    target_flux = LCS.lpf.data_target['f']
+    composite_flux = LCS.lpf.compute_model(LCS.min_pv)
+    error_flux = LCS.lpf.data_target['e']
+    wavelength = LCS.lpf.w
+
+    improved_absrv, wl_offset, chi2_min = fit_wavelength_offset_to_rv_offset(
+        wavelength, target_flux, composite_flux, error_flux, absrv_current
+    )
+
+    rv_change = improved_absrv - absrv_current
+    if abs(rv_change) > tolerance and abs(rv_change) < 20.:
+        print("Significant absrv improvement found ({:0.3f} km/s)".format(rv_change))
+        return improved_absrv, True
+
+    print("Change {:0.3f} km/s is below tolerance; keeping original absrv.".format(rv_change))
+    return absrv_current, True
+
 def run_specmatch_for_orders(targetfile, targetname, outputdirectory='specmatch_results', HLS=None, 
-                             df_lib=None, orders = ['4','5','6','14','15','16','17'],
-                             maxvsini=30.,calibrate_feh=True,scaleres=1.):
+                             df_lib=None, path_df_lib=None, orders = ['4','5','6','14','15','16','17'],
+                             maxvsini=30.,calibrate_feh=True,scaleres=1.,absrv=None,vsini=None,
+                             refine_absrv=True,max_refinement_iterations=3):
     """
     run hpfspecmatch for a given target file and orders
     
@@ -793,14 +870,19 @@ def run_specmatch_for_orders(targetfile, targetname, outputdirectory='specmatch_
         targetname - target name, queried via simbad or tic ('GJ_251' or TIC 68581262)
         outputdirectory - folder to save overall results and plots
         HLS - refence stars as an HPFSpecList object, defaults to normal library
-        path_df_lib - path to .csv file containing info on Teff/FeH/logg for all library stars
-                    - defaults to config.PATH_LIBRARY_DB
+        path_df_lib - optional path to .csv file containing info on Teff/FeH/logg for all library stars
+                    - defaults to config.PATH_LIBRARY_DB when df_lib not supplied
         orders - hpf orders to run (orders 4, 5, 6, 14, 15, 16, and 17
                     recommended as they are the cleanest orders with minimal tellurics)
         maxvsini - maximum vsini to consider (default = 30 km/s)
+        absrv - absolute radial velocity (km/s) to adopt instead of measuring from the data
+        vsini - vsini (km/s) to use as a tight prior instead of fitting freely
+        refine_absrv - whether to iteratively refine the absolute RV using wavelength offsets
+        max_refinement_iterations - maximum number of refinement attempts (reserved for future use)
     
     OUTPUT:
         result files will be saved to outputdirectory
+        returns list of vsini values for processed orders
     
     EXAMPLE:
         filename = '../input/20201020_hpf_gto_targets/Slope-20200114T091114_R01.optimal.fits'
@@ -814,20 +896,20 @@ def run_specmatch_for_orders(targetfile, targetname, outputdirectory='specmatch_
     
     """
     utils.make_dir(outputdirectory)
-    # Target data
     Htarget = hpfspec.HPFSpectrum(targetfile,targetname = targetname, plot_ccf=True, outputdirectory=outputdirectory)
 
-    # print('Reading Library DataBase from: {}'.format(path_df_lib))
-    # df_lib = pd.read_csv(path_df_lib)
-    
-    # Reference data
+    if df_lib is None:
+        if path_df_lib is None:
+            path_df_lib = config.PATH_LIBRARY_DB
+        print('Reading Library DataBase from: {}'.format(path_df_lib))
+        df_lib = pd.read_csv(path_df_lib)
+
     if HLS is None:
         print('No HLS supplied, defaulting to default library')
         HLS = hpfspec.HPFSpecList(filelist=config.LIBRARY_FITSFILES)
-        Hrefs   = HLS.splist
 
-    # Run spectral matching algorithm for first two orders
-    # in principle we should run all orders, just first two as an example
+    vsini_results = []
+
     for o in orders:
         print("##################")
         print("Order {}".format(o))
@@ -837,19 +919,55 @@ def run_specmatch_for_orders(targetfile, targetname, outputdirectory='specmatch_
         ww = np.arange(wmin,wmax,0.01)   # Wavelength array to resample to
         v = np.linspace(-125,125,1501)   # Velocities in km/s to use for absolute RV consideration
         savefolder = '{}/{}_{}/'.format(outputdirectory,Htarget.object,o) # foldername to save
+        order_int = int(o)
+        rv_orders_for_run = [order_int]
+        current_absrv = absrv
 
-        #############################################################
-        # Run specmatch for order 
-        #############################################################
-        t,f,l,vis,te,fe,le,df_chi,LCS = run_specmatch(Htarget,   # Target class
-                                                      HLS.splist,# Library spectra
-                                                      ww,        # Wavelength to resample to
-                                                      v,         # velocity range to use for absolute rv
-                                                      df_lib,    # dataframe with info on Teff/FeH/logg for the library stars
-                                                      savefolder=savefolder,
-                                                      maxvsini=maxvsini,
-                                                      calibrate_feh=calibrate_feh,
-                                                      scaleres=scaleres)
+        results = run_specmatch(Htarget,   # Target class
+                                HLS.splist,# Library spectra
+                                ww,        # Wavelength to resample to
+                                v,         # velocity range to use for absolute rv
+                                df_lib,    # dataframe with info on Teff/FeH/logg for the library stars
+                                savefolder=savefolder,
+                                maxvsini=maxvsini,
+                                calibrate_feh=calibrate_feh,
+                                scaleres=scaleres,
+                                rv_orders=rv_orders_for_run,
+                                absrv=current_absrv,
+                                vsini=vsini)
+        t,f,l,vis,te,fe,le,df_chi,LCS = results
+
+        if refine_absrv and current_absrv is not None:
+            improved_absrv, converged = refit_absrv_with_composite(Htarget, LCS, ww, v, order_int,
+                                                                   current_absrv,
+                                                                   max_iterations=max_refinement_iterations)
+            absrv_change = abs(improved_absrv - current_absrv)
+            if converged and absrv_change > 0.1:
+                print("Significant absrv improvement detected ({:0.3f} km/s), re-running fit with improved absrv...".format(absrv_change))
+                savefolder_refined = savefolder.rstrip('/') + '_refined/'
+                results = run_specmatch(Htarget,
+                                        HLS.splist,
+                                        ww,
+                                        v,
+                                        df_lib,
+                                        savefolder=savefolder_refined,
+                                        maxvsini=maxvsini,
+                                        calibrate_feh=calibrate_feh,
+                                        scaleres=scaleres,
+                                        rv_orders=rv_orders_for_run,
+                                        absrv=improved_absrv,
+                                        vsini=vsini)
+                t,f,l,vis,te,fe,le,df_chi,LCS = results
+                current_absrv = improved_absrv
+            else:
+                print("Small absrv change ({:0.3f} km/s); retaining initial fit.".format(absrv_change))
+
+        if current_absrv is not None:
+            print("Final absrv adopted for order {}: {:0.3f} km/s".format(o, current_absrv))
+
+        vsini_results.append(vis)
+
+    return vsini_results
 
         
 def plot_crossvalidation_results_1d(order,df_crossval,savefolder):
