@@ -860,6 +860,7 @@ def refit_absrv_with_composite(Htarget, LCS, ww, v, order, absrv_current, max_it
 
 def run_specmatch_for_orders(targetfile, targetname, outputdirectory='specmatch_results', HLS=None, 
                              df_lib=None, path_df_lib=None, orders = ['4','5','6','14','15','16','17'],
+                             rv_orders=None,
                              maxvsini=30.,calibrate_feh=True,scaleres=1.,absrv=None,vsini=None,
                              refine_absrv=True,max_refinement_iterations=3):
     """
@@ -874,6 +875,7 @@ def run_specmatch_for_orders(targetfile, targetname, outputdirectory='specmatch_
                     - defaults to config.PATH_LIBRARY_DB when df_lib not supplied
         orders - hpf orders to run (orders 4, 5, 6, 14, 15, 16, and 17
                     recommended as they are the cleanest orders with minimal tellurics)
+        rv_orders - spectral orders to use when estimating absolute RV (defaults to internal choice)
         maxvsini - maximum vsini to consider (default = 30 km/s)
         absrv - absolute radial velocity (km/s) to adopt instead of measuring from the data
         vsini - vsini (km/s) to use as a tight prior instead of fitting freely
@@ -920,7 +922,7 @@ def run_specmatch_for_orders(targetfile, targetname, outputdirectory='specmatch_
         v = np.linspace(-125,125,1501)   # Velocities in km/s to use for absolute RV consideration
         savefolder = '{}/{}_{}/'.format(outputdirectory,Htarget.object,o) # foldername to save
         order_int = int(o)
-        rv_orders_for_run = [order_int]
+        rv_orders_for_run = rv_orders
         current_absrv = absrv
 
         results = run_specmatch(Htarget,   # Target class

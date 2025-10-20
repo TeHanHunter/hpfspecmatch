@@ -14,6 +14,7 @@ def process_fits_spectra(
     input_folder,
     output_folder,
     orders=None,
+    rv_orders=None,
     maxvsini=250,
     calibrate_feh=True,
     scaleres=1.0,
@@ -44,6 +45,8 @@ def process_fits_spectra(
         Absolute radial velocity (km/s) to adopt for all targets; enables refinement workflow.
     vsini : float, optional
         Projected rotation (km/s) to impose as a tight prior.
+    rv_orders : list[str], optional
+        Orders to use when estimating absolute RV (falls back to default inside hpfspecmatch when omitted).
     refine_absrv : bool, optional
         Re-run fits if wavelength-offset refinement suggests a significantly different RV.
     max_refinement_iterations : int, optional
@@ -84,6 +87,7 @@ def process_fits_spectra(
                 ),
                 df_lib=df_lib,
                 orders=orders,
+                rv_orders=rv_orders,
                 maxvsini=maxvsini,
                 calibrate_feh=calibrate_feh,
                 scaleres=scaleres,
