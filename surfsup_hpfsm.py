@@ -17,10 +17,39 @@ def process_fits_spectra(
     maxvsini=250,
     calibrate_feh=True,
     scaleres=1.0,
-    verbose=True
+    absrv=None,
+    vsini=None,
+    refine_absrv=True,
+    max_refinement_iterations=3,
+    verbose=True,
 ):
     """
     Process all FITS spectra in input_folder using hpfspecmatch.
+
+    Parameters
+    ----------
+    input_folder : str
+        Directory containing input FITS spectra.
+    output_folder : str
+        Destination directory for per-target SpecMatch outputs.
+    orders : list[str], optional
+        Spectral orders to analyze. Defaults to HPF canonical set.
+    maxvsini : float, optional
+        Maximum projected rotation allowed during fitting.
+    calibrate_feh : bool, optional
+        Apply Fe/H calibration after composite fit.
+    scaleres : float, optional
+        Residual scaling applied when plotting composite fits.
+    absrv : float, optional
+        Absolute radial velocity (km/s) to adopt for all targets; enables refinement workflow.
+    vsini : float, optional
+        Projected rotation (km/s) to impose as a tight prior.
+    refine_absrv : bool, optional
+        Re-run fits if wavelength-offset refinement suggests a significantly different RV.
+    max_refinement_iterations : int, optional
+        Maximum refinement attempts (future use; kept for API parity).
+    verbose : bool, optional
+        Emit progress and diagnostic messages.
     """
     if orders is None:
         orders = [str(i) for i in [4, 5, 6, 14, 15, 16, 17]]
@@ -57,7 +86,11 @@ def process_fits_spectra(
                 orders=orders,
                 maxvsini=maxvsini,
                 calibrate_feh=calibrate_feh,
-                scaleres=scaleres
+                scaleres=scaleres,
+                absrv=absrv,
+                vsini=vsini,
+                refine_absrv=refine_absrv,
+                max_refinement_iterations=max_refinement_iterations,
             )
             del hdul
             gc.collect()
