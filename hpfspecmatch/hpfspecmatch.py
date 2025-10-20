@@ -193,7 +193,7 @@ class FitLinCombSpec(object):
             utils.ax_apply_settings(xx,ticksize=10)
         fig.subplots_adjust(hspace=0.05)
         
-    def plot_model_with_components(self,pv,fig=None,ax=None,names=None,savename='compositeComparison.pdf',title='',scaleres=1.):
+    def plot_model_with_components(self,pv,fig=None,ax=None,names=None,savename='compositeComparison.pdf',title='',scaleres=1.,refined_absrv=None):
         """
         INPUT:
             scaleres - amount to scale residuals from composite spectrum (default 1)
@@ -223,6 +223,8 @@ class FitLinCombSpec(object):
         ax.text(w[0],0.15,'Residual: Target - Composite (Scale: {:0.0f}x)'.format(scaleres),fontsize=8)
 
         title += 'Target={}, Teff={:0.3f}, Fe/H={:0.3f}, logg={:0.3f}, vsini={:0.3f}km/s'.format(self.targetname,self.teff,self.feh,self.logg,self.vsini)
+        if refined_absrv is not None:
+            title += ', absrv={:0.3f}km/s'.format(refined_absrv)
         ax.set_title(title,fontsize=10)
         
         ax.plot(w,(self.lpf.data_target['f']-ff)*scaleres,color='black',lw=1)
@@ -622,8 +624,12 @@ def run_specmatch(Htarget,Hrefs,ww,v,df_library,df_target=None,plot=True,savefol
     print(LCS.min_pv)
     #LCS.plot_model(LCS.min_pv)# SEJ
     if plot:
-        LCS.plot_model_with_components(LCS.min_pv,names=df_chi_best['OBJECT_ID'].values,title = "",
-                                       savename=savefolder+targetname+'_compositecomparison.png',scaleres=scaleres)
+        LCS.plot_model_with_components(LCS.min_pv,
+                                       names=df_chi_best['OBJECT_ID'].values,
+                                       title="",
+                                       savename=savefolder+targetname+'_compositecomparison.png',
+                                       scaleres=scaleres,
+                                       refined_absrv=absrv)
         
     teff = LCS.teff
     feh = LCS.feh
