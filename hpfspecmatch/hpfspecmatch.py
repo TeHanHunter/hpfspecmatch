@@ -823,7 +823,15 @@ def fit_wavelength_offset_to_rv_offset(wavelength, target_flux, composite_flux, 
         chi2 = np.sum(((target_flux - shifted_composite) / error_flux) ** 2)
         return chi2
 
-    bounds = (-0.1, 0.1)
+        # Compute wavelength bounds corresponding to ±15 km/s
+    c = 299792.458  # Speed of light in km/s
+    mean_wavelength = np.mean(wavelength)
+    max_rv_offset_kms = 15.0
+    wavelength_window = (max_rv_offset_kms / c) * mean_wavelength
+    
+    # Fit for wavelength offset using scipy optimization over ±15 km/s equivalent
+    bounds = (-wavelength_window, wavelength_window)
+    
     try:
         result = scipy.optimize.minimize_scalar(chi2_wavelength_offset, bounds=bounds, method='bounded')
         wavelength_offset = result.x
